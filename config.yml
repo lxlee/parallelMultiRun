@@ -1,0 +1,33 @@
+---
+# remote host configs for ssh.
+hosts:
+    - 
+        ip: 192.168.1.1
+        port: 22
+        username: 123455
+        password: 123456
+    - 
+        ip: 192.168.1.2
+        port: 22
+        username: 123456
+        password: 123456
+
+# run on local machine, to prepare for remote running
+prepares:
+    - 
+        cmd: python3 prepare.py # generate /tmp/params.yml
+
+# run for each remote machine
+tasks:
+    -
+        scp: # copy /tmp/params.yml from local to remote
+            from: /tmp/params.yml
+            to: /tmp/params.yml
+    - 
+        cmd: run model1 -n -m -i /tmp/params.yml -o 
+    -
+        cmd：run model2
+
+posts:
+    - 
+        cmd: ls
