@@ -1,0 +1,23 @@
+---
+# remote host configs for ssh.
+hosts:
+    - 
+        ip: 192.168.0.2
+        port: 22
+        username: name
+        password: passwd
+
+# run for each remote machine
+tasks:
+    -   # copy /tmp/params.yml from local to remote
+        ScpTo:
+            source: /tmp/params.yml
+            target: /tmp/params.yml
+    -   # copy /tmp/params.yml from remote to local
+        ScpFrom:
+            source: /tmp/params.yml
+            target: /tmp/params.yml
+    -   # running on local machine
+        LocalCmd: run model1 -n -m -i /tmp/params.yml -o no 
+    -   # running on multiple remote machine
+        RemoteCmd: run model2
