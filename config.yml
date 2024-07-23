@@ -6,6 +6,9 @@ hosts:
         port: 22
         username: name
         password: passwd
+        env:
+            NODENAME: node1
+            NEWPATH: /tmp
 
 # run for each remote machine
 tasks:

@@ -11,6 +11,8 @@ hosts:
         post:
         username:
         password:
+        env:
+            node: node1
 tasks:
     -   
         [ScpTo|ScpFrom]:

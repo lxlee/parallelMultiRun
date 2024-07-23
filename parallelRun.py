@@ -10,19 +10,29 @@ from multiprocessing.pool import ThreadPool
 import click
 
 class Host:
-    def __init__(self, host, username, password, port=22) -> None:
+    def __init__(self, host, username, password, port=22, env=None) -> None:
         self._host = host
         self._username = username
         self._password = password
         self._port = port
+        self._env = env
 
         self._ssh = paramiko.SSHClient()
         self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self._ssh.connect(host, username=username, port=port, password=password, timeout=10)
         self._scp = scp.SCPClient(self._ssh.get_transport());
 
+        self.__setup_env()
+        self._sourceCMD = 'source /tmp/.env_paramiko'
+
     def name(self):
         return f"{self._username}@{self._host}:{self._port}"
+
+    def __setup_env(self):
+        self._ssh.exec_command('rm -f /tmp/.env_paramiko')
+        for k, v in self._env.items():
+            self._ssh.exec_command(f'echo "{k}={v}" >> /tmp/.env_paramiko')
+        # self._ssh.exec_command('source /tmp/.env_paramiko') # not working ...
 
     def scpto(self, source, target):
         logging.info(f"[TASK][{self._host}] scpto {source} {target}")
@@ -37,7 +47,7 @@ class Host:
 
     def execCmd(self, cmdline):
         logging.info(f"[TASK][self._host] cmd {cmdline}")
-        _, stdout_, stderr_ = self._ssh.exec_command(cmdline)
+        _, stdout_, stderr_ = self._ssh.exec_command(self._sourceCMD + ";" + cmdline)
         status = stdout_.channel.recv_exit_status()
         if 0 != status:
             logging.warning(f"[TASK][{self._host}] status {status}")
@@ -48,11 +58,12 @@ class HostManager:
         self._hosts = []
         try:
             for hc in hostcfgs:
-                self._hosts.append(Host(hc['ip'], hc['username'], hc['password'], hc['port']))
+                self._hosts.append(Host(hc['ip'], hc['username'], hc['password'], hc['port'], hc['env']))
                 logging.info(f"Connected to {hc['username']}@{hc['ip']}:{hc['port']}")
 
         except Exception as e:
             logging.critical(f"Failed to connect to {hc['username']}@{hc['ip']}:{hc['port']}")
+            logging.critical(e)
             return
     
     def __len__(self):
@@ -135,6 +146,9 @@ def _main(c, v, h):
         return
 
     hostManager = HostManager(config['hosts'])
+    if len(hostManager) != len(config['hosts']):
+        logging.warning(f"[MAIN][localhost] Some host connect error ...")
+        return
 
     logging.info(f"[MAIN][localhost] Will run on {len(hostManager)} hosts")
     if "tasks" in config:
