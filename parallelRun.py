@@ -9,6 +9,16 @@ import threading
 from multiprocessing.pool import ThreadPool
 import click
 
+
+def catchException(func):
+    def innerCaller(*args, **kwargs):
+        try:
+            func(*args, **kwargs)
+        except Exception as e:
+            logging.critical(e)
+            raise(e)
+    return innerCaller
+
 class Host:
     def __init__(self, host, username, password, port=22, env=None) -> None:
         self._host = host
@@ -34,6 +44,7 @@ class Host:
             self._ssh.exec_command(f'echo "{k}={v}" >> /tmp/.env_paramiko')
         # self._ssh.exec_command('source /tmp/.env_paramiko') # not working ...
 
+    @catchException
     def scpto(self, source, target):
         logging.info(f"[TASK][{self._host}] scpto {source} {target}")
         if os.path.isfile(source):
@@ -41,13 +52,21 @@ class Host:
         else:
             self._scp.put(source, target, recursive=True)
 
+    @catchException
     def scpfrom(self, source, target):
         logging.info(f"[TASK][{self._host}] scpfrom {source} {target}")
         self._scp.get(source, target, recursive=True)
 
+    @catchException
     def execCmd(self, cmdline):
-        logging.info(f"[TASK][self._host] cmd {cmdline}")
-        _, stdout_, stderr_ = self._ssh.exec_command(self._sourceCMD + ";" + cmdline)
+        logging.info(f"[TASK][{self._host}] cmd {cmdline}")
+        if cmdline.startswith("sudo"):
+            cmdline = cmdline.replace("sudo", "sudo -S -p ''")
+            stdin_, stdout_, stderr_ = self._ssh.exec_command(self._sourceCMD + ";" + cmdline, get_pty=True)
+            stdin_.write(self._password + "\n")
+            stdin_.flush()
+        else:
+            stdin_, stdout_, stderr_ = self._ssh.exec_command(self._sourceCMD + ";" + cmdline)
         status = stdout_.channel.recv_exit_status()
         if 0 != status:
             logging.warning(f"[TASK][{self._host}] status {status}")
@@ -62,7 +81,7 @@ class HostManager:
                 logging.info(f"Connected to {hc['username']}@{hc['ip']}:{hc['port']}")
 
         except Exception as e:
-            logging.critical(f"Failed to connect to {hc['username']}@{hc['ip']}:{hc['port']}")
+            logging.critical(f"Failed to connect to {hc['username']}@{hc['ip']}:{hc['port']} with pass({type(hc['password'])})")
             logging.critical(e)
             return
     
