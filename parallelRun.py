@@ -6,6 +6,8 @@ import paramiko
 import scp
 import logging
 import threading
+import time
+import socket
 from multiprocessing.pool import ThreadPool
 import click
 
@@ -38,10 +40,20 @@ class Host:
     def name(self):
         return f"{self._username}@{self._host}:{self._port}"
 
+    @property
+    def host(self):
+        return self._host
+
+    @property
+    def port(self):
+        return self._port
+
     def __setup_env(self):
         self._ssh.exec_command('rm -f /tmp/.env_paramiko')
         for k, v in self._env.items():
             self._ssh.exec_command(f'echo "{k}={v}" >> /tmp/.env_paramiko')
+        self._ssh.exec_command('echo "export PATH=/home/wision/.local/bin:$PATH" >> /tmp/.env_paramiko')
+        self._ssh.exec_command('echo "export PYTHONPATH=/home/wision/work/myPylibs:$PYTHONPATH" >> /tmp/.env_paramiko')
         # self._ssh.exec_command('source /tmp/.env_paramiko') # not working ...
 
     @catchException
@@ -71,6 +83,8 @@ class Host:
         if 0 != status:
             logging.warning(f"[TASK][{self._host}] status {status}")
             logging.warning(f"[TASK][{self._host}] error : {stderr_.read().decode('utf-8')}")
+        else:
+            logging.info(f"[TASK][{self._host}] cmd finished")
 
 class HostManager:
     def __init__(self, hostcfgs):
@@ -80,6 +94,9 @@ class HostManager:
                 self._hosts.append(Host(hc['ip'], hc['username'], hc['password'], hc['port'], hc['env']))
                 logging.info(f"Connected to {hc['username']}@{hc['ip']}:{hc['port']}")
 
+            self._monitor = threading.Thread(target=self.monitor)
+            self._monitor.setDaemon(True)
+            self._monitor.start()
         except Exception as e:
             logging.critical(f"Failed to connect to {hc['username']}@{hc['ip']}:{hc['port']} with pass({type(hc['password'])})")
             logging.critical(e)
@@ -114,6 +131,21 @@ class HostManager:
                     pool.join()
             else:
                 logging.critical(f"Unsupport cmd \"{prog}\"")
+
+    def monitor(self):
+        def online(ip, port):
+            try:
+                socket.create_connection((ip, port), timeout=5)
+                return True
+            except socket.error:
+                return False
+
+        while True:
+            for host in self._hosts:
+                if not online(host.host, host.port):
+                    logging.critical(f"\"{host.name()}\" offline.")
+
+            time.sleep(10)
 
 def printHelp():
         print('''config.yml format:
@@ -155,18 +187,18 @@ def _main(c, v, h):
     try:
         with open(c, "r") as f:
             config = yaml.safe_load(f)
-    except Exception as e:
+    except Exception:
         logging.critical(f"[MAIN][localhost] format error in '{c}'")
         return
 
 
     if not "hosts" in config:
-        logging.warning(f"[MAIN][localhost] no hosts config found...")
+        logging.warning("[MAIN][localhost] no hosts config found...")
         return
 
     hostManager = HostManager(config['hosts'])
     if len(hostManager) != len(config['hosts']):
-        logging.warning(f"[MAIN][localhost] Some host connect error ...")
+        logging.warning("[MAIN][localhost] Some host connect error ...")
         return
 
     logging.info(f"[MAIN][localhost] Will run on {len(hostManager)} hosts")
